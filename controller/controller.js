@@ -1,106 +1,153 @@
-const User = require("../models/users");
-const Exercise = require("../models/exercises");
+const {Exercise, User} = require("../models/models");
+const asyncWrapper = require("../middleware/async-error");
+const {createCustomError} = require("../middleware/custom-error");
 
 
-const getAllUsers =  function(req,res){
-     User.find({}, (err, foundData) => {
-        if(!data){
-          res.send("No users");
-        }else{
-          res.status(200).json(foundData);
-        }
-      });
+
+const getIndexPage = function(req,res){
+  res.sendFile("index.html",{root:"./views"});
 };
 
-const createUsers =  function(req,res){
-    console.log(req.body.username);
-    const newUser = new User({
-        username: req.body.username
-      });
-      newUser.save((err, foundData) => {
-        if(err){
-          res.send("Error : " + err);
-        }else{
-          res.status(200).json(foundData);
-        }
-      });
-};
+
+const getAllUsers =  asyncWrapper( async function(req,res){
+  const getUser =  await User.find({});
+  if(!getUser){return next(createCustomError("get User Error",404));}
+  res.status(200).json({getUser});
+});
+
+const createUsers = asyncWrapper( async function(req,res,next){
+  const username = req.body.username;
+  const newUser = await new User({username:username});
+  if(!newUser){return next(createCustomError("new user error"),404);}
+  newUser.save();
+  res.status(200).json({newUser});
+
+
+});
 
 const createExercise = function(req,res){
-  console.log("Create Exercise");
-  const postId = req.params.postId;
+  let userId = req.params.postId;
   let description = req.body.description;
   let duration = req.body.duration;
   let date = req.body.date;
-  if(!date){
-    date = new Date();
+  date = new Date(date).toDateString();
+
+  if(date ===""||date == "Invalid Date"){
+    let currentDate = new Date();
+    date = currentDate.toDateString();
   }
-  User.findById(postId, (err, userData) => {
-    if(err || !userData) {
-      res.send("Could not find user");
-    }else{
-      const newExercise = new Exercise({
-        userId: postId,
-        description,
-        duration,
-        date: new Date(date),
-      });
-      newExercise.save((err, data) => {
-        if(err) {
-          res.send("There was an error saving this exercise" + err);
-        if(!data){res.send("Data not found.");}
-        }else {
-          const { description, duration, date, _id} = data;
-          res.status(200).json({
-            username: userData.username,
-            description,
-            duration,
-            date: date.toDateString(),
-            _id: userData.userId
-          });
-        }
-      });
-    }
+  else{
+    let currentDate = new Date();
+    date = currentDate.toDateString();
+  }
+
+  const newExercise = new Exercise({
+    "description" : description,
+    "duration" : duration,
+    "date" :date
   });
+try{
+  User.findByIdAndUpdate(
+    {_id:userId}
+    ,{$push:{"log":newExercise}}
+    ,{new:true}
+    ,function(err,foundData){
+      console.log(foundData);
+     if(err){return createCustomError("new exercise error" + err,404);}
+     if(!foundData){return  createCustomError("New exercise not found data",404);}
+     res.status(200).json({
+       "username":foundData.username,
+       "description":newExercise.description,
+       "duration":newExercise.duration,
+       "date":newExercise.date,
+       "_id":foundData._id
+     });
+ });
+}
+ catch(e){
+   res.send(e);
+ }
 };
 
 const getLogs = function(req,res){
-  let from = req.query.from;
-  let to = req.query.to;
-  let limit = req.query.limit;
-  const postId = req.params.postId;
-  User.findById(postId,function(err,userData){
-    if(err){res.send("Find by id error : " + err);}
-    if(!userData){res.send("Not found user data.");}
-    else{
-      let dateObj = {};
-      if(from){dateObj["$gte"]=new Date(from);}
-      if(to){dateObj["$lte"] = new Date(to);}
-      let filter = {
-        userId:postId
-      };
-      if(from||to){filter.date=dateObj;}
-      let nonNullLimit = limit ?? 50;
-      Exercise.find(filter).limit(+nonNullLimit).exec(function(err,exerciseData){
-        if(err){res.send("Exercise error : " +err);}
-        if(!exerciseData){res.send("Exercise data not found");}
-        else{
-          let count = exerciseData.length;
-          let rawLog = exerciseData;
-          const {username, _id} = userData;
-          const log = rawLog.map((item) =>({
-            description:item.description,
-            duration:item.duration,
-            date:item.date.toDateString()
-          }));
-          res.status(200).json({username,count,_id,log});
-        }
+  let userId = req.params.postId;
+  let fromQuery = req.query.from;
+  let toQuery = req.query.to;
+  let limitQuery = req.query.limit;
 
+  User.findById(
+    {_id : userId}, (error, foundData) => {
+    if (error) {
+      console.log(error);
+      res.send("Something Went wrong. Get Exercises");
+    }
+    let logs = foundData.log;
+    let filteredLogs = logs.map(log => {
+
+      let des = log.description;
+      let dur = log.duration;
+      let date = log.date;
+
+      let userLogs = {
+        "description": des,
+        "duration": dur,
+        "date": date
+      };
+      return userLogs;
     });
-  }
+
+    let resObject = {};
+
+    resObject['username'] = foundData.username;
+    resObject['count'] = foundData.log.length;
+    resObject['_id'] = foundData.id;
+    resObject['log'] = filteredLogs;
+
+  function objectLimiter(input) {
+      let limit = input.slice(0, limitQuery);
+      return limit;
+    }
+
+    if (fromQuery || toQuery) {
+
+      let fromDate = new Date(0);
+      let toDate = new Date();
+
+
+      if (fromQuery) {
+        fromDate = new Date(fromQuery);
+      }
+      if (toQuery) {
+        toDate = new Date(toQuery);
+      }
+
+      fromDate = fromDate.getTime();
+      toDate = toDate.getTime();
+
+
+      let logSearch = foundData.log.filter((exercise) => {
+        let exerciseDate = new Date(exercise.date).getTime();
+        return exerciseDate >= fromDate && exerciseDate <= toDate;
+      });
+
+      resObject['username'] = foundData.username;
+      resObject['count'] = logSearch.length;
+      resObject['_id'] = foundData.id;
+      resObject['log'] = logSearch;
+    }
+
+    //filters/slices the log to a given log length or count.
+    if (limitQuery) {
+      resObject['username'] = foundData.username;
+      resObject['count'] = objectLimiter(resObject.log).length;
+      resObject['_id'] = foundData.id;
+      resObject['log'] = objectLimiter(resObject.log);
+    }
+
+    res.status(200).json(resObject);
   });
 };
 
 
 
-module.exports={getAllUsers,createUsers,createExercise,getLogs};
+module.exports={getAllUsers,createUsers,createExercise,getLogs,getIndexPage};

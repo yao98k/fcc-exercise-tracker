@@ -2,14 +2,14 @@ const { application } = require("express");
 const express = require("express");
 const router = express.Router();
 
-const {getAllUsers,createUsers,createExercise,getLogs} = require( "../controller/controller")
+const {getAllUsers,createUsers,createExercise,getLogs,getIndexPage} = require( "../controller/controller")
 
 
 //Yollar buraya gelecek
-
-router.route("/").get(getAllUsers);
-router.route("/").post(createUsers);
-router.route("/:postId/exercises").post(createExercise);
-router.route("/:postId/logs").get(getLogs);
+router.route("/").get(getIndexPage);
+router.route("/api/users").get(getAllUsers);
+router.route("/api/users").post(createUsers);
+router.route("/api/users/:postId/exercises").post(createExercise);
+router.route("/api/users/:postId/logs").get(getLogs);
 
 module.exports = router;

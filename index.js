@@ -7,20 +7,22 @@ const Router = require ("./routes/routes");
 const notFoundMiddleware = require("./middleware/not-found");
 const errorMiddleware = require("./middleware/error-handler");
 const bodyParser = require("body-parser")
-app.use(bodyParser.urlencoded({ extended: false }));
-app.use(bodyParser.json());
+const bodyParserErrorHandler = require('express-body-parser-error-handler');
+app.use(bodyParser.json({ limit: '50mb' }));
+app.use(bodyParser.urlencoded({ extended: true, limit: '50mb' }));
+app.use(bodyParserErrorHandler());
 
-app.use("/api/users",Router);
+
+
+app.use("/",Router);
 
 app.use(notFoundMiddleware);
 app.use(errorMiddleware);
 
 
 app.use(cors());
-app.use(express.static('public'));
-app.get('/', (req, res) => {
-  res.sendFile(__dirname + '/views/index.html')
-});
+app.use(express.static('/views'));
+app.use(express.static("/public"));
 
 
 
