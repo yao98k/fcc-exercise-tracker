@@ -1,35 +1,92 @@
-const {Exercise, User} = require("../models/models");
-const asyncWrapper = require("../middleware/async-error");
-const {createCustomError} = require("../middleware/custom-error");
+//All function on this page.
+require('dotenv').config();
+const express = require('express');
+const app = express();
+const cors = require('cors');
+const bodyParser = require("body-parser")
+const bodyParserErrorHandler = require('express-body-parser-error-handler');
+const mongoose = require('mongoose');
+
+//App uses
+app.use(bodyParser.json({ limit: '50mb' }));
+app.use(bodyParser.urlencoded({ extended: true, limit: '50mb' }));
+app.use(bodyParserErrorHandler());
+
+app.use(cors());
+app.use(express.static('public'));
+app.get('/', (req, res) => {
+  res.sendFile(__dirname + '/views/index.html');
+});
+/////App uses /////////////
+
+//Database creation, conection, models...
+ mongoose.connect(process.env.MONGO_URI, {
+    useNewUrlParser: true
+  });
+
+  const ExerciseSchema = mongoose.Schema({
+    "description": {"type": String, "required": true},
+    "duration": {"type": Number, "required": true},
+    "date": String
+  });
+
+  const UserSchema = mongoose.Schema({
+    "username": {"type": String, "required": true},
+    "log": [ExerciseSchema]
+  });
 
 
+  const Exercise = mongoose.model("Exercise", ExerciseSchema);
 
-const getIndexPage = function(req,res){
-  res.sendFile("index.html",{root:"./views"});
-};
+  const User = mongoose.model("User", UserSchema);
+
+  ////// Database creation//////////
 
 
-const getAllUsers =  asyncWrapper( async function(req,res){
-  const getUser =  await User.find({});
-  if(!getUser){return next(createCustomError("get User Error",404));}
-  res.status(200).json(getUser);
+//Routes and operations
+
+//Get All Users
+// app.get("/api/users",function(req,res){
+//   try{
+//     User.find({},function(err,foundData){
+//       if(err){console.log(err);}
+//
+//       res.status(200).json(foundData);
+//     });
+//   }
+//   catch(error){
+//     console.log("catch  " + error);
+//   }
+// });
+
+app.get("/api/users", (req, res) => {
+  User.find({}, (err, data) => {
+    if(!data){
+      res.send("No users")
+    }else{
+      res.json(data);
+    }
+  });
 });
 
-const createUsers = asyncWrapper( async function(req,res,next){
+
+//Create User
+
+app.post("/api/users",function(req,res){
   const username = req.body.username;
-  const newUser = await new User({username:username});
-  if(!newUser){return next(createCustomError("new user error"),404);}
-  newUser.save();
-  let sendData = {
-    "username":newUser.username,
-    "_id":newUser._id
-  };
-  res.status(200).json(sendData);
-
-
+  const newUser = new User({username:username});
+  newUser.save(function(err){
+    if(err){console.log("Error - Create User : " + err );}
+    let sendData = {
+      "username":newUser.username,
+      "_id":newUser._id
+    };
+    res.status(200).json(sendData);
+  });
 });
 
-const createExercise = function(req,res){
+//Create Exercise
+app.post("/api/users/:postId/exercises",function(req,res){
   let userId = req.params.postId;
   let description = req.body.description;
   let duration = req.body.duration;
@@ -40,25 +97,22 @@ const createExercise = function(req,res){
     let currentDate = new Date();
     date = currentDate.toDateString();
   }
-  else{
-    let currentDate = new Date();
-    date = currentDate.toDateString();
-  }
 
   const newExercise = new Exercise({
     "description" : description,
     "duration" : duration,
     "date" :date
   });
-try{
+
+  try{
   User.findByIdAndUpdate(
     {_id:userId}
     ,{$push:{"log":newExercise}}
     ,{new:true}
     ,function(err,foundData){
       console.log(foundData);
-     if(err){return createCustomError("new exercise error" + err,404);}
-     if(!foundData){return  createCustomError("New exercise not found data",404);}
+     if(err){console.log("Error - Create Exercise : " + err );;}
+     if(!foundData){console.log("foundData - Create User : ");}
      res.status(200).json({
        "username":foundData.username,
        "description":newExercise.description,
@@ -66,14 +120,15 @@ try{
        "date":newExercise.date,
        "_id":foundData._id
      });
- });
-}
- catch(e){
+  });
+  }
+  catch(e){
    res.send(e);
- }
-};
+  }
+});
 
-const getLogs = function(req,res){
+//Get logs
+app.get("/api/users/:postId/logs",function(req,res){
   let userId = req.params.postId;
   let fromQuery = req.query.from;
   let toQuery = req.query.to;
@@ -150,8 +205,19 @@ const getLogs = function(req,res){
 
     res.status(200).json(resObject);
   });
-};
+
+});
 
 
 
-module.exports={getAllUsers,createUsers,createExercise,getLogs,getIndexPage};
+
+
+
+/////Routes and operations /////////
+
+
+
+
+const listener = app.listen(process.env.PORT || 3000, () => {
+  console.log('Your app is listening on port ' + listener.address().port)
+});
